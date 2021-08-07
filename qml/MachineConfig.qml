@@ -1,23 +1,24 @@
 // Copyright (c) 2021
 // MKS Plugin is released under the terms of the AGPLv3 or higher.
 
-import UM 1.2 as UM
+import UM 1.3 as UM
 import Cura 1.0 as Cura
 
 import QtQuick 2.2
 import QtQuick.Controls 1.1
-import QtQuick.Layouts 1.1
+import QtQuick.Layouts 1.3
 import QtQuick.Window 2.1
 
 Cura.MachineAction
 {
     id: base
     anchors.fill: parent;
+
+    UM.I18nCatalog { id: catalog; name:"mksplugin" }
+
     property var selectedPrinter: null
-    property bool completeProperties: true
 
     property var connectedDevice: Cura.MachineManager.printerOutputDevices.length >= 1 ? Cura.MachineManager.printerOutputDevices[0] : null
-    property var printerModel: connectedDevice != null ? connectedDevice.activePrinter : null
 
     property var printerSupportScreenshots: manager.supportScreenshot()
     property var printerScreenshotSizesList: manager.getScreenshotOptions()
@@ -31,14 +32,14 @@ Cura.MachineAction
             // Connect to the printer if the MachineAction is currently shown
             if(base.parent.wizard == dialog)
             {
-                connectToPrinter();
+                connectPrinter();
             }
         }
     }
 
-    function connectToPrinter()
+    function connectPrinter()
     {
-        if(base.selectedPrinter && base.completeProperties)
+        if(base.selectedPrinter)
         {
             var printerKey = base.selectedPrinter.getKey()
             if(manager.getStoredKey() != printerKey)
@@ -50,9 +51,9 @@ Cura.MachineAction
         }
     }
 
-    function unconnectToPrinter()
+    function disconnectPrinter()
     {
-        if(base.selectedPrinter && base.completeProperties)
+        if(base.selectedPrinter)
         {
             var printerKey = base.selectedPrinter.getKey()
             if(manager.getStoredKey() == printerKey)
@@ -63,355 +64,528 @@ Cura.MachineAction
         }
     }
 
-    Column
+    ListModel
     {
-        anchors.fill: parent;
-        id: discoverUM3Action
-        spacing: UM.Theme.getSize("default_margin").height
+        id: tabNameModel
 
-        SystemPalette { id: palette }
-        UM.I18nCatalog { id: catalog; name:"mksplugin" }
-        Label
+        Component.onCompleted: update()
+
+        function update()
         {
-            id: pageTitle
-            width: parent.width
-            text: catalog.i18nc("@title:window", "Connect to Networked Printer")
-            wrapMode: Text.WordWrap
-            font.pointSize: 18
+            clear()
+            append({ name: catalog.i18nc("@title:tab", "Network settings") })
+            append({ name: catalog.i18nc("@title:tab", "Preview settings") })
         }
+    }
 
-        Label
+    Cura.RoundedRectangle
+    {
+        anchors
         {
-            id: pageDescription
-            width: parent.width
-            wrapMode: Text.WordWrap
-            text: catalog.i18nc("@label", "To print directly to your printer from Cura, please make sure your printer is connected to the same WiFi network as this computer. If you don't connect your printer with Cura, you can still use SD drive to transfer g-code files to your printer.\n\nSelect your printer from the list below:")
+            top: tabBar.bottom
+            topMargin: -UM.Theme.getSize("default_lining").height
+            bottom: parent.bottom
+            left: parent.left
+            right: parent.right
         }
-
-        Row
+        cornerSide: Cura.RoundedRectangle.Direction.Down
+        border.color: UM.Theme.getColor("lining")
+        border.width: UM.Theme.getSize("default_lining").width
+        radius: UM.Theme.getSize("default_radius").width
+        color: UM.Theme.getColor("main_background")
+        StackLayout
         {
-            spacing: UM.Theme.getSize("default_lining").width
+            id: tabStack
+            anchors.fill: parent
 
-            Button
+            currentIndex: tabBar.currentIndex
+
+            Item
             {
-                id: addButton
-                text: catalog.i18nc("@action:button", "Add");
-                onClicked:
+                id: networkTab
+
+                property int columnWidth: ((parent.width - 2 * UM.Theme.getSize("default_margin").width) / 2) | 0
+                property int columnSpacing: 3 * screenScaleFactor
+
+                property int labelWidth: (columnWidth * 2 / 3 - UM.Theme.getSize("default_margin").width * 2) | 0
+                property int controlWidth: (columnWidth / 3) | 0
+                property var labelFont: UM.Theme.getFont("default")
+
+                Column
                 {
-                    manualPrinterDialog.showDialog("", "");
-                }
-            }
-
-            Button
-            {
-                id: editButton
-                text: catalog.i18nc("@action:button", "Edit")
-                enabled: base.selectedPrinter != null && base.selectedPrinter.getProperty("manual") == "true"
-                onClicked:
-                {
-                    manualPrinterDialog.showDialog(base.selectedPrinter.getKey(), base.selectedPrinter.ipAddress);
-                }
-            }
-
-            Button
-            {
-                id: removeButton
-                text: catalog.i18nc("@action:button", "Remove")
-                enabled: base.selectedPrinter != null && base.selectedPrinter.getProperty("manual") == "true"
-                onClicked: manager.removeManualPrinter(base.selectedPrinter.getKey(), base.selectedPrinter.ipAddress)
-            }
-
-            Button
-            {
-                id: rediscoverButton
-                text: catalog.i18nc("@action:button", "Refresh")
-                onClicked: manager.restartDiscovery()
-            }
-        }
-
-        Row
-        {
-            id: contentRow
-            width: parent.width
-            spacing: UM.Theme.getSize("default_margin").width
-
-            Column
-            {
-                width: Math.round(parent.width * 0.5)
-                spacing: UM.Theme.getSize("default_margin").height
-
-                ScrollView
-                {
-                    id: objectListContainer
-                    frameVisible: true
-                    width: parent.width
-                    height: base.height - contentRow.y - discoveryTip.height
-
-                    Rectangle
+                    id: networkUpperBlock
+                    anchors
                     {
-                        parent: viewport
-                        anchors.fill: parent
-                        color: palette.light
+                        top: parent.top
+                        left: parent.left
+                        right: parent.right
+                        bottom: parent.bottom
+                        margins: UM.Theme.getSize("default_margin").width
                     }
+                    spacing: UM.Theme.getSize("default_margin").width
+                    width: parent.width
 
-                    ListView
+                    Row
                     {
-                        id: listview
-                        model: manager.foundDevices
-                        onModelChanged:
+                        id: wifiSupportRow
+                        anchors
                         {
-                            var selectedKey = manager.getStoredKey();
-                            for(var i = 0; i < model.length; i++) {
-                                if(model[i].getKey() == selectedKey)
-                                {
-                                    currentIndex = i;
-                                    return
+                            left: parent.left
+                            right: parent.right
+                        }
+
+                        Label
+                        {
+                            width: Math.round(parent.width * 0.5)
+                            height: mksWifiSupport.height
+                            verticalAlignment: Text.AlignVCenter
+                            wrapMode: Text.WordWrap
+                            text: catalog.i18nc("@label", "WiFi support")
+                            font: UM.Theme.getFont("default")
+                            color: UM.Theme.getColor("text")
+
+                            enabled: mksSupport.checked
+                        }
+                        Cura.CheckBox
+                        {
+                            id: mksWifiSupport
+                            checked: manager.WiFiSupportEnabled()
+
+                            onCheckedChanged: {
+                                if (!mksWifiSupport.checked) {
+                                    manager.setCurrentIP("")
+                                    manager.setMaxFilenameLen("")
+                                    disconnectPrinter();
+                                    manager.removeManualPrinter(base.selectedPrinter.getKey(), base.selectedPrinter.ipAddress);
                                 }
                             }
-                            currentIndex = -1;
+
+                            enabled: mksSupport.checked
                         }
-                        width: parent.width
-                        currentIndex: -1
-                        onCurrentIndexChanged:
+                    }
+
+                    Row
+                    {
+                        id: maxFilenameLenRow
+                        anchors
                         {
-                            base.selectedPrinter = listview.model[currentIndex];
-                            // Only allow connecting if the printer has responded to API query since the last refresh
-                            base.completeProperties = base.selectedPrinter != null && base.selectedPrinter.getProperty("incomplete") != "true";
+                            left: parent.left
+                            right: parent.right
                         }
-                        Component.onCompleted: manager.startDiscovery()
-                        delegate: Rectangle
+
+                        Label
                         {
-                            height: childrenRect.height
-                            color: ListView.isCurrentItem ? palette.highlight : index % 2 ? palette.base : palette.alternateBase
-                            width: parent.width
-                            Label
+                            width: Math.round(parent.width * 0.5)
+                            height: maxFilenameLenInput.height
+                            verticalAlignment: Text.AlignVCenter
+                            wrapMode: Text.WordWrap
+                            text: catalog.i18nc("@label", "Maximum file name length (0..255, 30 by default)")
+                            font: UM.Theme.getFont("default")
+                            color: UM.Theme.getColor("text")
+
+                            enabled: mksSupport.checked
+                        }
+                        Cura.TextField
+                        {
+                            id: maxFilenameLenInput
+                            width: Math.round(parent.width * 0.5) - UM.Theme.getSize("default_margin").width
+                            maximumLength: 3
+                            validator: RegExpValidator
                             {
-                                anchors.left: parent.left
-                                anchors.leftMargin: UM.Theme.getSize("default_margin").width
-                                anchors.right: parent.right
-                                text: listview.model[index].name
-                                color: parent.ListView.isCurrentItem ? palette.highlightedText : palette.text
-                                elide: Text.ElideRight
+                                regExp: /^\s*$|^(?:[0-1]?[0-9]?[0-9]|2?[0-4]?[0-9]|25[0-5])$/
                             }
 
-                            MouseArea
+                            text: manager.getMaxFilenameLen()
+
+                            onEditingFinished: {
+                                manager.setMaxFilenameLen(maxFilenameLenInput.text)
+                            }
+
+                            enabled: mksSupport.checked
+                        }
+                    }
+
+                    Row
+                    {
+                        id: printerControlRaw
+                        width: parent.width
+                        spacing: UM.Theme.getSize("default_margin").width
+
+                        Button
+                        {
+                            id: addButton
+                            height: UM.Theme.getSize("setting_control").height
+                            style: UM.Theme.styles.print_setup_action_button
+                            text: catalog.i18nc("@action:button", "Add");
+                            enabled: mksWifiSupport.checked;
+                            onClicked:
                             {
-                                anchors.fill: parent;
-                                onClicked:
-                                {
-                                    if(!parent.ListView.isCurrentItem)
+                                manualPrinterDialog.showDialog("", "");
+                            }
+                        }
+
+                        Button
+                        {
+                            id: editButton
+                            height: UM.Theme.getSize("setting_control").height
+                            style: UM.Theme.styles.print_setup_action_button
+                            text: catalog.i18nc("@action:button", "Edit")
+                            enabled: mksWifiSupport.checked && base.selectedPrinter != null && base.selectedPrinter.getProperty("manual") == "true"
+                            onClicked:
+                            {
+                                manualPrinterDialog.showDialog(base.selectedPrinter.getKey(), base.selectedPrinter.ipAddress);
+                            }
+                        }
+
+                        Button
+                        {
+                            id: removeButton
+                            height: UM.Theme.getSize("setting_control").height
+                            style: UM.Theme.styles.print_setup_action_button
+                            text: catalog.i18nc("@action:button", "Remove")
+                            enabled: mksWifiSupport.checked && base.selectedPrinter != null && base.selectedPrinter.getProperty("manual") == "true"
+                            onClicked:
+                            {
+                                disconnectPrinter();
+                                manager.removeManualPrinter(base.selectedPrinter.getKey(), base.selectedPrinter.ipAddress);
+                            }
+                        }
+                    }
+
+                    Cura.ScrollView
+                    {
+                        id: objectListContainer
+                        width: parent.width
+                        height: networkUpperBlock.height - wifiSupportRow.height - maxFilenameLenRow.height - printerControlRaw.height - printerConnectRaw.height - UM.Theme.getSize("default_margin").width * 4
+
+                        enabled: mksWifiSupport.checked;
+
+                        ListView
+                        {
+                            id: listview
+                            model: manager.foundDevices
+                            onModelChanged:
+                            {
+                                var selectedKey = manager.getStoredKey();
+                                for(var i = 0; i < model.length; i++) {
+                                    if(model[i].getKey() == selectedKey)
                                     {
-                                        parent.ListView.view.currentIndex = index;
+                                        currentIndex = i;
+                                        return
+                                    }
+                                }
+                                currentIndex = -1;
+                            }
+                            width: parent.width
+                            currentIndex: -1
+                            onCurrentIndexChanged:
+                            {
+                                base.selectedPrinter = listview.model[currentIndex];
+                            }
+                            Component.onCompleted: manager.startDiscovery()
+                            delegate: Rectangle
+                            {
+                                height: childrenRect.height
+                                color: ListView.isCurrentItem ? UM.Theme.getColor("button_active") : UM.Theme.getColor("button")
+                                width: parent.width
+                                Label
+                                {
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: UM.Theme.getSize("default_margin").width
+                                    anchors.right: parent.right
+                                    text: listview.model[index].address
+                                    color: objectListContainer.enabled ? UM.Theme.getColor("text") : UM.Theme.getColor("text_inactive")
+                                    elide: Text.ElideRight
+                                }
+
+                                MouseArea
+                                {
+                                    anchors.fill: parent;
+                                    onClicked:
+                                    {
+                                        if(!parent.ListView.isCurrentItem)
+                                        {
+                                            parent.ListView.view.currentIndex = index;
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-                Label
-                {
-                    id: discoveryTip
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    wrapMode: Text.WordWrap
-                    text: catalog.i18nc("@label", "If your printer is not listed, read the <a href='%1'>network printing troubleshooting guide</a>").arg("https://ultimaker.com/en/troubleshooting");
-                    onLinkActivated: Qt.openUrlExternally(link)
-                }
 
-            }
-            Column
-            {
-                width: Math.round(parent.width * 0.5)
-                visible: base.selectedPrinter ? true : false
-                // spacing: UM.Theme.getSize("default_margin").height
-                Label
-                {
-                    width: parent.width
-                    wrapMode: Text.WordWrap
-                    text: base.selectedPrinter ? base.selectedPrinter.name : ""
-                    font: UM.Theme.getFont("large")
-                    elide: Text.ElideRight
+                    Row
+                    {
+                        id: printerConnectRaw
+                        width: parent.width
+                        spacing: UM.Theme.getSize("default_margin").width
+
+                        Button
+                        {
+                            id: connectbtn
+                            height: UM.Theme.getSize("setting_control").height
+                            style: UM.Theme.styles.print_setup_action_button
+                            text: catalog.i18nc("@action:button", "Connect")
+                            enabled: {
+                                if (!mksWifiSupport.checked) {
+                                    return false
+                                }
+                                if (base.selectedPrinter) {
+                                    if (connectedDevice != null) {
+                                        if (connectedDevice.address  != base.selectedPrinter.ipAddress) {
+                                            return true
+                                        }else{
+                                            return false
+                                        }
+                                    }
+                                }
+                                return true
+                            }
+                            onClicked: {
+                                manager.setCurrentIP(base.selectedPrinter.ipAddress)
+                                connectPrinter()
+                            }
+                        }
+
+                        Button
+                        {
+                            id: unconnectbtn
+                            height: UM.Theme.getSize("setting_control").height
+                            style: UM.Theme.styles.print_setup_action_button
+                            text: catalog.i18nc("@action:button", "Disconnect")
+                            enabled: {
+                                if (!mksWifiSupport.checked) {
+                                    return false
+                                }
+                                if (base.selectedPrinter) {
+                                    if (connectedDevice != null) {
+                                        if (connectedDevice.address == base.selectedPrinter.ipAddress) {
+                                            return true
+                                        }
+                                    }
+                                }
+                                return false
+                            }
+                            onClicked: disconnectPrinter()
+                        }
+                    }
                 }
+            }
+
+            Item
+            {
+                id: screenshotTab
+
                 Grid
                 {
-                    visible: base.completeProperties
+                    id: screenshotUpperBlock
+                    anchors
+                    {
+                        top: parent.top
+                        left: parent.left
+                        right: parent.right
+                        margins: UM.Theme.getSize("default_margin").width
+                    }
+                    spacing: UM.Theme.getSize("default_margin").width
                     width: parent.width
                     columns: 2
+
                     Label
                     {
                         width: Math.round(parent.width * 0.5)
-                        wrapMode: Text.WordWrap
-                        text: catalog.i18nc("@label", "Type")
-                    }
-                    Label
-                    {
-                        width: Math.round(parent.width * 0.5)
-                        wrapMode: Text.WordWrap
-                        text:
-                        {
-                            if(base.selectedPrinter)
-                            {
-                                if(base.selectedPrinter.printerType == "ultimaker3")
-                                {
-                                    return catalog.i18nc("@label Printer name", "Ultimaker 3")
-                                } else if(base.selectedPrinter.printerType == "ultimaker3_extended")
-                                {
-                                    return catalog.i18nc("@label Printer name", "Ultimaker 3 Extended")
-                                } else
-                                {
-                                    return catalog.i18nc("@label Printer name", "TFT WIFI") // We have no idea what type it is. Should not happen 'in the field'
-                                }
-                            }
-                            else
-                            {
-                                return ""
-                            }
-                        }
-                    }
-                    Label
-                    {
-                        width: Math.round(parent.width * 0.5)
-                        wrapMode: Text.WordWrap
-                        text: catalog.i18nc("@label", "Firmware version")
-                    }
-                    Label
-                    {
-                        width: Math.round(parent.width * 0.5)
-                        wrapMode: Text.WordWrap
-                        text: base.selectedPrinter ? base.selectedPrinter.firmwareVersion : ""
-                    }
-                    Label
-                    {
-                        width: Math.round(parent.width * 0.5)
-                        wrapMode: Text.WordWrap
-                        text: catalog.i18nc("@label", "Address")
-                    }
-                    Label
-                    {
-                        width: Math.round(parent.width * 0.5)
-                        wrapMode: Text.WordWrap
-                        text: base.selectedPrinter ? base.selectedPrinter.ipAddress : ""
-                    }
-                    Label
-                    {
-                        width: Math.round(parent.width * 0.5)
+                        height: mksScreenshotSupport.height
+                        verticalAlignment: Text.AlignVCenter
                         wrapMode: Text.WordWrap
                         text: catalog.i18nc("@label", "Screenshot support")
+                        font: UM.Theme.getFont("default")
+                        color: UM.Theme.getColor("text")
+
+                        enabled: mksSupport.checked
                     }
+                    Cura.CheckBox
+                    {
+                        id: mksScreenshotSupport
+                        checked: printerSupportScreenshots
+
+                        onCheckedChanged: {
+                            if (!mksScreenshotSupport.checked) {
+                                manager.setSimage("")
+                                manager.setGimage("")
+                                manager.setScreenshotIndex("")
+                            }
+                            simageTextInput.text = manager.getSimage()
+                            gimageTextInput.text = manager.getGimage()
+                            screenshotComboBox.currentIndex = 0
+                        }
+
+                        enabled: mksSupport.checked
+                    }
+
                     Label
                     {
                         width: Math.round(parent.width * 0.5)
+                        height: screenshotComboBox.height
+                        verticalAlignment: Text.AlignVCenter
                         wrapMode: Text.WordWrap
-                        text: printerSupportScreenshots ? catalog.i18nc("@label", "Yes") : catalog.i18nc("@label", "No")
+                        text: catalog.i18nc("@label", "Printer model")
+                        font: UM.Theme.getFont("default")
+                        color: UM.Theme.getColor("text")
+
+                        enabled: mksScreenshotSupport.checked
                     }
+                    Cura.ComboBox
+                    {
+                        id: screenshotComboBox
+                        width: Math.round(parent.width * 0.5) - UM.Theme.getSize("default_margin").width
+                        height: mksSupport.height
+
+                        textRole: "key"
+
+                        model: printerScreenshotSizesList
+
+                        currentIndex: manager.getScreenshotIndex()
+
+                        onCurrentIndexChanged:
+                        {
+                            if (mksScreenshotSupport.checked) {
+                                var currentValue = model[screenshotComboBox.currentIndex].key
+                                if (currentValue != catalog.i18nc("@label", "Custom")){
+                                    var settings = manager.getScreenshotSettings(currentValue)
+                                    manager.setSimage(settings.simage)
+                                    manager.setGimage(settings.gimage)
+                                }
+                                simageTextInput.text = manager.getSimage()
+                                gimageTextInput.text = manager.getGimage()
+                                manager.setScreenshotIndex(currentIndex)
+                            }
+                        }
+
+                        enabled: mksScreenshotSupport.checked
+                    }
+
                     Label
                     {
                         width: Math.round(parent.width * 0.5)
+                        height: simageTextInput.height
+                        verticalAlignment: Text.AlignVCenter
                         wrapMode: Text.WordWrap
                         text: catalog.i18nc("@label", "Simage")
+                        font: UM.Theme.getFont("default")
+                        color: UM.Theme.getColor("text")
 
-                        visible:printerSupportScreenshots
+                        enabled: mksScreenshotSupport.checked
                     }
-                    Label
+                    Cura.TextField
                     {
-                        width: Math.round(parent.width * 0.5)
-                        wrapMode: Text.WordWrap
-                        text: printerSupportScreenshots ? manager.getSimage() : ""
-
-                        visible: printerSupportScreenshots
-                    }
-                    Label
-                    {
-                        width: Math.round(parent.width * 0.5)
-                        wrapMode: Text.WordWrap
-                        text: catalog.i18nc("@label", "Gimage")
-
-                        visible: printerSupportScreenshots
-                    }
-                    Label
-                    {
-                        width: Math.round(parent.width * 0.5)
-                        wrapMode: Text.WordWrap
-                        text: printerSupportScreenshots ? manager.getGimage() : ""
-
-                        visible:printerSupportScreenshots
-                    }
-                }
-
-                Label
-                {
-                    width: parent.width
-                    wrapMode: Text.WordWrap
-                    text:{
-                        // The property cluster size does not exist for older UM3 devices.
-                        if(!base.selectedPrinter || base.selectedPrinter.clusterSize == null || base.selectedPrinter.clusterSize == 1)
+                        id: simageTextInput
+                        width: Math.round(parent.width * 0.5) - UM.Theme.getSize("default_margin").width
+                        maximumLength: 5
+                        validator: RegExpValidator
                         {
-                            return "";
+                            regExp: /[0-9]*/
                         }
-                        else if (base.selectedPrinter.clusterSize === 0)
-                        {
-                            return catalog.i18nc("@label", "This printer is not set up to host a group of Ultimaker 3 printers.");
-                        }
-                        else
-                        {
-                            return catalog.i18nc("@label", "This printer is the host for a group of %1 Ultimaker 3 printers.".arg(base.selectedPrinter.clusterSize));
-                        }
-                    }
 
-                }
-                Label
-                {
-                    width: parent.width
-                    wrapMode: Text.WordWrap
-                    visible: base.selectedPrinter != null && !base.completeProperties
-                    text: catalog.i18nc("@label", "The printer at this address has not yet responded." )
-                }
-                Row
-                {
-                    spacing: 10
-                    Button
-                    {
-                        id: connectbtn
-                        text: catalog.i18nc("@action:button", "Connect")
+                        text: manager.getSimage()
+
+                        onEditingFinished: {
+                            manager.setSimage(simageTextInput.text)
+                        }
+
                         enabled: {
-                            if (base.selectedPrinter && base.completeProperties) {
-                                if (connectedDevice != null) {
-                                    if (connectedDevice.address  != base.selectedPrinter.ipAddress) {
-                                        return true
-                                    }else{
-                                        return false
-                                    }
-                                }                                
-                            }
-                            return true                    
-                        }
-                        onClicked: connectToPrinter()
-                    }
-                    Button
-                    {
-                        id: unconnectbtn
-                        text: catalog.i18nc("@action:button", "Disconnect")
-                        enabled: {
-                            if (base.selectedPrinter && base.completeProperties) {
-                                if (connectedDevice != null) {
-                                    if (connectedDevice.address == base.selectedPrinter.ipAddress) {
-                                        return true
-                                    }
-                                }                                
+                            if (mksScreenshotSupport.checked) {
+                                if (screenshotComboBox.currentText == catalog.i18nc("@label", "Custom")) {
+                                    return true
+                                }
                             }
                             return false
                         }
-                        onClicked: unconnectToPrinter()
                     }
-                    Button
-                    {
-                        id: screenshotbtn
-                        text: catalog.i18nc("@action:button", "Image settings")
 
-                        onClicked: screenshotDialog.show()
+                    Label
+                    {
+                        width: Math.round(parent.width * 0.5)
+                        height: gimageTextInput.height
+                        verticalAlignment: Text.AlignVCenter
+                        wrapMode: Text.WordWrap
+                        text: catalog.i18nc("@label", "Gimage")
+                        font: UM.Theme.getFont("default")
+                        color: UM.Theme.getColor("text")
+
+                        enabled: mksScreenshotSupport.checked
+                    }
+                    Cura.TextField
+                    {
+                        id: gimageTextInput
+                        width: Math.round(parent.width * 0.5) - UM.Theme.getSize("default_margin").width
+                        maximumLength: 5
+                        validator: RegExpValidator
+                        {
+                            regExp: /[0-9]*/
+                        }
+
+                        text: manager.getGimage()
+
+                        onEditingFinished: {
+                            manager.setGimage(gimageTextInput.text)
+                        }
+
+                        enabled: {
+                            if (mksScreenshotSupport.checked) {
+                                if (screenshotComboBox.currentText == catalog.i18nc("@label", "Custom")) {
+                                    return true
+                                }
+                            }
+                            return false
+                        }
                     }
                 }
+            }
+        }
+    }
 
+    Row
+    {
+        id: headerRow
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.leftMargin: UM.Theme.getSize("default_margin").width
+        width: parent.width
+        spacing: UM.Theme.getSize("default_margin").height
+
+        Label
+        {
+            width: Math.round(parent.width * 0.5) - UM.Theme.getSize("default_margin").width * 2
+            wrapMode: Text.WordWrap
+            text: catalog.i18nc("@label", "MKS WiFi Plugin is active for this printer")
+        }
+        Cura.CheckBox
+        {
+            id: mksSupport
+            checked: manager.pluginEnabled()
+
+            onCheckedChanged: {
+                if (mksSupport.checked) {
+                    manager.pluginEnable()
+                } else {
+                    mksWifiSupport.checked = false
+                    mksScreenshotSupport.checked = false
+                    manager.pluginDisable()
+                }
+            }
+        }
+    }
+
+    UM.TabRow
+    {
+        id: tabBar
+        anchors.top: headerRow.bottom
+        anchors.topMargin: UM.Theme.getSize("default_margin").height
+        width: parent.width
+        Repeater
+        {
+            model: tabNameModel
+            delegate: UM.TabRowButton
+            {
+                text: model.name
             }
         }
     }
@@ -488,111 +662,6 @@ Cura.MachineAction
                     manualPrinterDialog.hide()
                 }
                 enabled: manualPrinterDialog.addressText.trim() != ""
-                isDefault: true
-            }
-        ]
-    }
-
-    UM.Dialog
-    {
-        id: screenshotDialog
-
-        minimumWidth: 300 * screenScaleFactor
-        minimumHeight: 130 * screenScaleFactor
-        width: minimumWidth
-        height: minimumHeight
-
-        Grid
-        {
-            width: parent.width
-            columns: 2
-
-            spacing: UM.Theme.getSize("default_lining").height
-
-            Label
-            {
-                width: Math.round(parent.width * 0.5)
-                wrapMode: Text.WordWrap
-                text: catalog.i18nc("@label", "Screenshot support")
-            }
-            ComboBox
-            {
-                id: variantComboBox
-                width: Math.round(parent.width * 0.5)
-
-                model: printerScreenshotSizesList
-
-                onCurrentIndexChanged:
-                {
-                    if (variantComboBox.currentText != catalog.i18nc("@label", "Custom")){
-                        var settings = manager.getScreenshotSettings(variantComboBox.currentText)
-                        simageTextInput.text = settings.simage
-                        gimageTextInput.text = settings.gimage
-                    }
-                }
-            }
-            Label
-            {
-                width: Math.round(parent.width * 0.5)
-                wrapMode: Text.WordWrap
-                text: catalog.i18nc("@label", "Simage")
-            }
-            TextField
-            {
-                id: simageTextInput
-                width: Math.round(parent.width * 0.5)
-                maximumLength: 5
-                validator: RegExpValidator
-                {
-                    regExp: /[0-9]*/
-                }
-
-                enabled: variantComboBox.currentText == catalog.i18nc("@label", "Custom") ? true : false
-            }
-            Label
-            {
-                width: Math.round(parent.width * 0.5)
-                wrapMode: Text.WordWrap
-                text: catalog.i18nc("@label", "Gimage")
-            }
-            TextField
-            {
-                id: gimageTextInput
-                width: Math.round(parent.width * 0.5)
-                maximumLength: 5
-                validator: RegExpValidator
-                {
-                    regExp: /[0-9]*/
-                }
-
-                enabled: variantComboBox.currentText == catalog.i18nc("@label", "Custom") ? true : false
-            }
-        }
-
-        onAccepted:
-        {
-            manager.setSimage(simageTextInput.text)
-            manager.setGimage(gimageTextInput.text)
-
-            printerSupportScreenshots = manager.supportScreenshot()
-        }
-
-        rightButtons: [
-            Button {
-                text: catalog.i18nc("@action:button","Cancel")
-                onClicked:
-                {
-                    screenshotDialog.reject()
-                    screenshotDialog.hide()
-                }
-            },
-            Button {
-                text: catalog.i18nc("@action:button", "OK")
-                onClicked:
-                {
-                    screenshotDialog.accept()
-                    screenshotDialog.hide()
-                }
                 isDefault: true
             }
         ]

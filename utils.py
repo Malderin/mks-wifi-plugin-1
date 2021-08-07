@@ -6,28 +6,8 @@ from UM.Application import Application
 from UM.Scene.Iterator.DepthFirstIterator import DepthFirstIterator
 from cura.Snapshot import Snapshot
 from PyQt5.QtCore import Qt
+from UM.Logger import Logger
 import os
-
-
-def getRect():
-    left = None
-    front = None
-    right = None
-    back = None
-    for node in DepthFirstIterator(Application.getInstance().getController().getScene().getRoot()):
-        if node.getBoundingBoxMesh():
-            if not left or node.getBoundingBox().left < left:
-                left = node.getBoundingBox().left
-            if not right or node.getBoundingBox().right > right:
-                right = node.getBoundingBox().right
-            if not front or node.getBoundingBox().front > front:
-                front = node.getBoundingBox().front
-            if not back or node.getBoundingBox().back < back:
-                back = node.getBoundingBox().back
-    if not (left and front and right and back):
-        return 0
-    result = max((right - left), (front - back))
-    return result
 
 def add_leading_zeros(rgb):
     str_hex = "%x" % rgb
@@ -85,6 +65,7 @@ def add_screenshot():
                 screenshot_string += add_screenshot_str(image, simage, simage, ";simage:")
             if "mks_gimage" in meta_data:
                 gimage = int(global_container_stack.getMetaDataEntry("mks_gimage"))
+                # ;; - needed for correct colors. do not remove them.
                 screenshot_string += add_screenshot_str(image, gimage, gimage, ";;gimage:")
             screenshot_string += "\r"
     else:

@@ -19,7 +19,7 @@ from UM.Settings.InstanceContainer import InstanceContainer
 from cura.Machines.ContainerTree import ContainerTree
 
 from PyQt5.QtQuick import QQuickView
-from PyQt5.QtWidgets import QFileDialog
+from PyQt5.QtWidgets import QFileDialog, QMessageBox
 
 from cura.PrinterOutput.GenericOutputController import GenericOutputController
 
@@ -116,14 +116,9 @@ class MKSOutputDevice(NetworkedPrinterOutputDevice):
         self._target_bed_temperature = 0
 
         self._application = CuraApplication.getInstance()
-        if self._application.getVersion().split(".")[0] < "4":
-            self._monitor_view_qml_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "qml",
-                "MonitorItem.qml")
-        else:
-            self._monitor_view_qml_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "qml",
-                "MonitorItem4x.qml")
+        self._monitor_view_qml_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "qml",
+            "MonitorItem4x.qml")
 
         # Make sure the output device gets selected above local file output and Octoprint XD
         self.setPriority(3)
@@ -248,7 +243,7 @@ class MKSOutputDevice(NetworkedPrinterOutputDevice):
             self._socket = None
         self._socket = QTcpSocket()
         self._socket.connectToHost(self._address, self._port)
-        global_container_stack = CuraApplication.getInstance(
+        global_container_stack = Application.getInstance(
         ).getGlobalContainerStack()
         self.setShortDescription(
             self._translations.get("print_over_action_button").format(
@@ -436,10 +431,18 @@ class MKSOutputDevice(NetworkedPrinterOutputDevice):
         label = self._translations.get("file_too_long_label")
         return self.show_dialog(filename, label, title)
 
+    def get_max_filename_len(self):
+        global_container_stack = Application.getInstance().getGlobalContainerStack()
+        if global_container_stack:
+            meta_data = global_container_stack.getMetaData()
+            if "mks_max_filename_len" in meta_data:
+                return int(global_container_stack.getMetaDataEntry("mks_max_filename_len"))
+        return 30
+
     def check_valid_filename(self, filename):
         if filename in self.sdFiles:
             filename = self.check_valid_filename(self.show_exists_dialog(filename))
-        if len(filename) >= 30:
+        if len(filename) >= self.get_max_filename_len():
             filename = self.check_valid_filename(self.show_to_long_dialog(filename))
         if self.is_contains_chinese(filename):
             filename = self.check_valid_filename(self.show_contains_chinese_dialog(filename))
@@ -704,7 +707,7 @@ class MKSOutputDevice(NetworkedPrinterOutputDevice):
             self.show_progress_message(preferences)
             self._last_file_name = file_name
             Logger.log(
-                "d", "mks: " + file_name + Application.getInstance().
+                "d", "mks file name: " + file_name + " original file name: " + Application.getInstance().
                 getPrintInformation().jobName.strip())
             
             # Adding screeshot section
@@ -995,6 +998,27 @@ class MKSOutputDevice(NetworkedPrinterOutputDevice):
         self._error_message.show()
         self._update_timer.start()
 
+    def read_line(self, line):
+        if "T" in line and "B" in line and "T0" in line:
+            self.printer_info_update(line)
+            return
+        if line.startswith("M997"):
+            self.printer_update_state(line)
+            return
+        if line.startswith("M994"):
+            self.printer_update_printing_filename(line)
+            return
+        if line.startswith("M992"):
+            self.printer_update_printing_time(line)
+            return
+        if line.startswith("M27"):
+            self.printer_update_totaltime(line)
+            return
+        if self.printer_file_list_parse(line):
+            return
+        if line.startswith("Upload"):
+            self.printer_upload_routine()
+
     def on_read(self):
         if not self._socket:
             self.disconnect()
@@ -1007,29 +1031,9 @@ class MKSOutputDevice(NetworkedPrinterOutputDevice):
             if not self._printers:
                 self._createPrinterList()
             while self._socket.canReadLine():
-                s = str(self._socket.readLine().data(), encoding=sys.getfilesystemencoding())
-                s = s.replace("\r", "").replace("\n", "")
+                s = (str(self._socket.readLine().data(), encoding=sys.getfilesystemencoding())).replace("\r", "").replace("\n", "")
                 Logger.log("d", "mks recv: " + s)
-                if "T" in s and "B" in s and "T0" in s:
-                    self.printer_info_update(s)
-                    continue
-                if s.startswith("M997"):
-                    self.printer_update_state(s)
-                    continue
-                if s.startswith("M994"):
-                    self.printer_update_printing_filename(s)
-                    continue
-                if s.startswith("M992"):
-                    self.printer_update_printing_time(s)
-                    continue
-                if s.startswith("M27"):
-                    self.printer_update_totaltime(s)
-                    continue
-                if self.printer_file_list_parse(s):
-                    continue
-                if s.startswith("Upload"):
-                    self.printer_upload_routine()
-                    continue
+                self.read_line(s)
         except Exception as e:
             print(e)
 
@@ -1085,6 +1089,8 @@ class MKSOutputDevice(NetworkedPrinterOutputDevice):
     def _onGlobalContainerChanged(self) -> None:
         self._global_container_stack = Application.getInstance(
         ).getGlobalContainerStack()
+        if not self._global_container_stack:
+            return
         definitions = self._global_container_stack.definition.findDefinitions(
             key="cooling")
         Logger.log("d", definitions[0].label)
@@ -1112,6 +1118,17 @@ class MKSOutputDevice(NetworkedPrinterOutputDevice):
                 key, "value", instance_container1.getProperty(key, "value"))
 
         return flat_container
+
+    def _prepareResult(self, escaped_string, prefix, prefix_length):
+        # Introduce line breaks so that each comment is no longer than 80 characters. Prepend each line with the prefix.
+        result = ""
+
+        # Lines have 80 characters, so the payload of each line is 80 - prefix.
+        for pos in range(0, len(escaped_string), 80 - prefix_length):
+            result += prefix + \
+                escaped_string[pos: pos + 80 - prefix_length] + "\n"
+
+        return result
 
     def _serialiseSettings(self, stack):
         """Serialises a container stack to prepare it for writing at the end of the g-code.
@@ -1242,11 +1259,4 @@ class MKSOutputDevice(NetworkedPrinterOutputDevice):
             lambda m: MKSOutputDevice.escape_characters[re.escape(m.group(0))],
             json_string)
 
-        # Introduce line breaks so that each comment is no longer than 80 characters. Prepend each line with the prefix.
-        result = ""
-
-        # Lines have 80 characters, so the payload of each line is 80 - prefix.
-        for pos in range(0, len(escaped_string), 80 - prefix_length):
-            result += prefix + \
-                escaped_string[pos: pos + 80 - prefix_length] + "\n"
-        return result
+        return self._prepareResult(escaped_string, prefix, prefix_length)

@@ -6,7 +6,6 @@ from . import MKSOutputDevicePlugin
 from . import MachineConfig
 from UM.i18n import i18nCatalog
 from PyQt5.QtQml import qmlRegisterType
-from . import NetworkMJPGImage
 
 catalog = i18nCatalog("cura")
 
@@ -18,8 +17,8 @@ def getMetaData():
     return {}
 
 def register(app):
-    if __matchVersion():
-        qmlRegisterType(NetworkMJPGImage.NetworkMJPGImage, "MKSPlugin", 1, 0, "NetworkMJPGImage")
+    if match_version():
+        qmlRegisterType(MKSOutputDevicePlugin.MKSOutputDevicePlugin, "MKSPlugin", 1, 0, "MKSOutputDevicePlugin")
         return {
             "output_device": MKSOutputDevicePlugin.MKSOutputDevicePlugin(),
             "machine_action": MachineConfig.MachineConfig()
@@ -28,7 +27,7 @@ def register(app):
         Logger.log("w", "Plugin not loaded because of a version mismatch")
         return {}
 
-def __matchVersion():
+def match_version():
     cura_version = Application.getInstance().getVersion()
     if cura_version == "master":
         Logger.log("d", "Running Cura from source. Skipping version check")
